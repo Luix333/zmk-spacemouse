@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpaceMouse monitor</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1a1a1a; --bar-bg: #e0e0e0;
+  --pos: #2e7d32; --neg: #c62828; --panel-bg: #f5f5f5;
+  --border: #ccc; --log-bg: #fafafa; --btn: #1976d2; --btn-text: #fff;
+}
+@media (prefers-color-scheme: dark) {
+:root {
+  --bg: #1e1e1e; --fg: #e0e0e0; --bar-bg: #3a3a3a;
+  --pos: #4caf50; --neg: #ef5350; --panel-bg: #2c2c2c;
+  --border: #555; --log-bg: #262626; --btn: #64b5f6; --btn-text: #111;
+}
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--fg); padding: 1rem; max-width: 900px; margin: 0 auto; }
+h1 { margin-bottom: .5rem; font-size: 1.4rem; }
+#status { margin-bottom: .75rem; font-size: .9rem; }
+button { background: var(--btn); color: var(--btn-text); border: none; padding: .45rem 1rem; border-radius: 4px; cursor: pointer; font-size: .9rem; }
+button:disabled { opacity: .5; cursor: default; }
+.panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; }
+.panel h2 { font-size: 1rem; margin-bottom: .5rem; }
+.bar-row { display: flex; align-items: center; margin-bottom: .35rem; font-size: .85rem; }
+.bar-label { width: 2.5rem; flex-shrink: 0; font-weight: 600; }
+.bar-track { flex: 1; height: 18px; background: var(--bar-bg); border-radius: 3px; position: relative; overflow: hidden; }
+.bar-fill { position: absolute; top: 0; height: 100%; transition: width .08s, left .08s; }
+.bar-fill.pos { background: var(--pos); }
+.bar-fill.neg { background: var(--neg); }
+.bar-value { width: 3.5rem; text-align: right; font-family: monospace; flex-shrink: 0; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .4rem; font-size: .85rem; }
+.stat-grid span { background: var(--bar-bg); padding: .3rem .5rem; border-radius: 3px; font-family: monospace; }
+#log { background: var(--log-bg); border: 1px solid var(--border); border-radius: 4px; padding: .5rem; max-height: 260px; overflow-y: auto; font-family: monospace; font-size: .78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+#buttons-hex { font-family: monospace; font-size: 1.1rem; letter-spacing: .05em; }
+</style>
+</head>
+<body>
+<h1>SpaceMouse monitor</h1>
+<div id="status">
+  <button id="connectBtn">Connect</button>
+  <button id="disconnectBtn" disabled>Disconnect</button>
+  <span id="deviceInfo"></span>
+</div>
+
+<div class="panel" id="axesPanel">
+  <h2>Axes</h2>
+  <div class="bar-row"><span class="bar-label">X</span><div class="bar-track" id="track-x"></div><span class="bar-value" id="val-x">0</span></div>
+  <div class="bar-row"><span class="bar-label">Y</span><div class="bar-track" id="track-y"></div><span class="bar-value" id="val-y">0</span></div>
+  <div class="bar-row"><span class="bar-label">Z</span><div class="bar-track" id="track-z"></div><span class="bar-value" id="val-z">0</span></div>
+  <div class="bar-row"><span class="bar-label">Rx</span><div class="bar-track" id="track-rx"></div><span class="bar-value" id="val-rx">0</span></div>
+  <div class="bar-row"><span class="bar-label">Ry</span><div class="bar-track" id="track-ry"></div><span class="bar-value" id="val-ry">0</span></div>
+  <div class="bar-row"><span class="bar-label">Rz</span><div class="bar-track" id="track-rz"></div><span class="bar-value" id="val-rz">0</span></div>
+</div>
+
+<div class="panel">
+  <h2>Buttons (report 3)</h2>
+  <div id="buttons-hex">00000000</div>
+</div>
+
+<div class="panel">
+  <h2>Stats</h2>
+  <div class="stat-grid">
+    <div>Total reports: <span id="stat-total">0</span></div>
+    <div>Reports/sec: <span id="stat-rps">0</span></div>
+    <div>Since last: <span id="stat-since">—</span> ms</div>
+    <div>All-zero: <span id="stat-zero">0</span></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Log (last 20)</h2>
+  <div id="log"></div>
+</div>
+
+<script>
+(function () {
+  const MAX_RANGE = 350;
+  const MAX_LOG = 20;
+  const NAMES = ['x', 'y', 'z', 'rx', 'ry', 'rz'];
+
+  let device = null;
+  let totalReports = 0;
+  let zeroReports = 0;
+  let lastReportTime = 0;
+  let timestamps = [];
+  let logEntries = [];
+
+  const connectBtn = document.getElementById('connectBtn');
+  const disconnectBtn = document.getElementById('disconnectBtn');
+  const deviceInfo = document.getElementById('deviceInfo');
+  const buttonsHex = document.getElementById('buttons-hex');
+  const statTotal = document.getElementById('stat-total');
+  const statRps = document.getElementById('stat-rps');
+  const statSince = document.getElementById('stat-since');
+  const statZero = document.getElementById('stat-zero');
+  const logEl = document.getElementById('log');
+
+  connectBtn.addEventListener('click', connect);
+  disconnectBtn.addEventListener('click', disconnect);
+
+  function hex8(buf) {
+    return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function addLog(id, buf) {
+    const line = id + ': ' + hex8(buf);
+    logEntries.unshift(line);
+    if (logEntries.length > MAX_LOG) logEntries.length = MAX_LOG;
+    logEl.textContent = logEntries.join('\n');
+  }
+
+  function setBar(name, value) {
+    const track = document.getElementById('track-' + name);
+    const valEl = document.getElementById('val-' + name);
+    if (!track || !valEl) return;
+    valEl.textContent = value;
+    const pct = Math.min(Math.abs(value) / MAX_RANGE, 1) * 100;
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill ' + (value >= 0 ? 'pos' : 'neg');
+    fill.style.width = pct + '%';
+    fill.style.left = value >= 0 ? '50%' : (50 - pct) + '%';
+    track.innerHTML = '';
+    track.appendChild(fill);
+  }
+
+  function allZero(vals) {
+    for (let i = 0; i < vals.length; i++) { if (vals[i] !== 0) return false; }
+    return true;
+  }
+
+  function nowMs() { return performance.now(); }
+
+  function updateStats() {
+    const now = nowMs();
+    // keep timestamps from the last second
+    while (timestamps.length && timestamps[0] < now - 1000) timestamps.shift();
+    timestamps.push(now);
+    statRps.textContent = timestamps.length;
+    statSince.textContent = lastReportTime ? Math.round(now - lastReportTime) : '—';
+  }
+
+  function onInputReport(event) {
+    const id = event.reportId;
+    const view = event.data;
+    totalReports++;
+    lastReportTime = nowMs();
+    statTotal.textContent = totalReports;
+
+    addLog(id, view);
+
+    if (id === 1 && view.byteLength >= 12) {
+      const vals = [];
+      for (let i = 0; i < 6; i++) {
+        vals.push(view.getInt16(i * 2, true));
+      }
+      if (allZero(vals)) zeroReports++;
+      statZero.textContent = zeroReports;
+      for (let i = 0; i < 6; i++) {
+        setBar(NAMES[i], vals[i]);
+      }
+    }
+
+    if (id === 3 && view.byteLength >= 4) {
+      let hex = '';
+      for (let i = 0; i < 4; i++) {
+        hex += view.getUint8(i).toString(16).padStart(2, '0');
+      }
+      buttonsHex.textContent = hex.toUpperCase();
+    }
+
+    updateStats();
+  }
+
+  async function connect() {
+    if (!('hid' in navigator)) {
+      deviceInfo.textContent = ' WebHID not available: use Chrome or Edge over https or file://.';
+      return;
+    }
+    try {
+      const devList = await navigator.hid.requestDevice({
+        filters: [{ usagePage: 0x01, usage: 0x08 }]
+      });
+      if (!devList.length) return;
+      device = devList[0];
+      await device.open();
+      device.addEventListener('inputreport', onInputReport);
+      navigator.hid.addEventListener('disconnect', onHidDisconnect);
+      connectBtn.disabled = true;
+      disconnectBtn.disabled = false;
+      const vid = device.vendorId.toString(16).padStart(4, '0');
+      const pid = device.productId.toString(16).padStart(4, '0');
+      deviceInfo.textContent = ' ' + (device.productName || '') + '  ' + vid + ':' + pid;
+    } catch (e) {
+      deviceInfo.textContent = ' Error: ' + e.message;
+    }
+  }
+
+  async function disconnect() {
+    if (!device) return;
+    device.removeEventListener('inputreport', onInputReport);
+    navigator.hid.removeEventListener('disconnect', onHidDisconnect);
+    try { await device.close(); } catch (_) {}
+    device = null;
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
+    deviceInfo.textContent = '';
+  }
+
+  function onHidDisconnect(event) {
+    if (event.device !== device) return;
+    navigator.hid.removeEventListener('disconnect', onHidDisconnect);
+    device = null;
+    connectBtn.disabled = false;
+    disconnectBtn.disabled = true;
+    deviceInfo.textContent = ' (disconnected)';
+  }
+})();
+</script>
+</body>
+</html>
