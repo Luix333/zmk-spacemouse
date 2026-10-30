@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2026 Luix333
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <dt-bindings/zmk/spacemouse.h>
+
+/ {
+    /omit-if-no-ref/ zip_spacemouse: zip_spacemouse {
+        compatible = "zmk,input-processor-spacemouse";
+        #input-processor-cells = <2>;
+    };
+};

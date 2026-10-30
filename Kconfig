@@ -1,0 +1,64 @@
+# Copyright (c) 2026 Luix333
+# SPDX-License-Identifier: MIT
+
+config ZMK_SPACEMOUSE
+    bool "3Dconnexion-compatible SpaceMouse HID interface"
+    default y if DT_HAS_ZMK_INPUT_PROCESSOR_SPACEMOUSE_ENABLED
+    depends on ZMK_POINTING
+    depends on ZMK_USB || ZMK_BLE
+    depends on !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
+    help
+        Enable the 3Dconnexion-compatible SpaceMouse HID interface
+
+if ZMK_SPACEMOUSE
+
+config ZMK_SPACEMOUSE_USB_HID_INDEX
+    int "USB HID device index for the SpaceMouse interface"
+    default 1
+    range 1 3
+    help
+        USB HID device used; ZMK uses HID_0
+
+config ZMK_SPACEMOUSE_REPORT_INTERVAL_MS
+    int "Milliseconds between SpaceMouse reports"
+    default 16
+    range 4 100
+    help
+        ms between reports (a real SpaceMouse sends every 16 ms)
+
+config ZMK_SPACEMOUSE_KEEP_PER_MILLE
+    int "Deflection kept per tick, in thousandths"
+    default 700
+    range 0 1000
+    help
+        share of the deflection kept each tick; lower springs back faster
+
+config ZMK_SPACEMOUSE_DEADBAND
+    int "Output dead band, in report units"
+    default 3
+    range 0 50
+    help
+        outputs within this many units of zero are sent as 0
+
+config ZMK_SPACEMOUSE_ZERO_REPEATS
+    int "All-zero reports sent after motion stops"
+    default 3
+    range 1 10
+    help
+        all-zero reports sent after motion stops
+
+config ZMK_SPACEMOUSE_BLE_QUEUE_SIZE
+    int "Queued BLE SpaceMouse reports"
+    default 8
+    range 2 32
+    help
+        BLE notifications that can wait to be sent
+
+config ZMK_INPUT_PROCESSOR_SPACEMOUSE
+    bool
+    default y
+    depends on DT_HAS_ZMK_INPUT_PROCESSOR_SPACEMOUSE_ENABLED
+    help
+        SpaceMouse input processor for trackball motion
+
+endif

@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Luix333
+# SPDX-License-Identifier: MIT
+
+description: Feeds trackball REL_X/REL_Y motion into a 3Dconnexion-compatible SpaceMouse report
+
+compatible: "zmk,input-processor-spacemouse"
+
+include: ip_two_param.yaml
+
+properties:
+  gain:
+    type: int
+    default: 768
+    description: Q8 gain from trackball counts to deflection units (256 = 1.0)
